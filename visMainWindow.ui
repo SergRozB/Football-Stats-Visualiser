@@ -15,23 +15,6 @@
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QGridLayout" name="gridLayout_2">
-    <item row="9" column="0">
-     <widget class="QLineEdit" name="searchBar"/>
-    </item>
-    <item row="6" column="0">
-     <widget class="QPushButton" name="loadNormalisedDataButton">
-      <property name="text">
-       <string>Load Normalised Data</string>
-      </property>
-     </widget>
-    </item>
-    <item row="7" column="0">
-     <widget class="QPushButton" name="loadNormalisedDataButtonPerLeague">
-      <property name="text">
-       <string>Load Normalised Data (Per League)</string>
-      </property>
-     </widget>
-    </item>
     <item row="4" column="0">
      <widget class="QPushButton" name="loadRawDataButton">
       <property name="text">
@@ -39,7 +22,7 @@
       </property>
      </widget>
     </item>
-    <item row="11" column="0">
+    <item row="12" column="0">
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
        <number>2</number>
@@ -132,17 +115,14 @@
          <enum>QGraphicsView::AnchorViewCenter</enum>
         </property>
        </widget>
-       <widget class="QLabel" name="label">
+       <widget class="QComboBox" name="dataRadarTypeOptions">
         <property name="geometry">
          <rect>
-          <x>150</x>
-          <y>230</y>
-          <width>55</width>
-          <height>16</height>
+          <x>0</x>
+          <y>0</y>
+          <width>73</width>
+          <height>22</height>
          </rect>
-        </property>
-        <property name="text">
-         <string>TextLabel</string>
         </property>
        </widget>
       </widget>
@@ -152,6 +132,30 @@
      <widget class="QPushButton" name="loadNormalisedDataButtonPerLeaguePerPos">
       <property name="text">
        <string>Load Normalised Data (Per Position Per League)</string>
+      </property>
+     </widget>
+    </item>
+    <item row="10" column="0">
+     <widget class="QLineEdit" name="searchBar"/>
+    </item>
+    <item row="6" column="0">
+     <widget class="QPushButton" name="loadNormalisedDataButton">
+      <property name="text">
+       <string>Load Normalised Data</string>
+      </property>
+     </widget>
+    </item>
+    <item row="7" column="0">
+     <widget class="QPushButton" name="loadNormalisedDataButtonPerLeague">
+      <property name="text">
+       <string>Load Normalised Data (Per League)</string>
+      </property>
+     </widget>
+    </item>
+    <item row="9" column="0">
+     <widget class="QLabel" name="currentLoadedDataLabel">
+      <property name="text">
+       <string>Currently loaded data: Raw Data</string>
       </property>
      </widget>
     </item>

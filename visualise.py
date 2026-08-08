@@ -16,8 +16,6 @@ radar_data = {
     "GK": ["Goals", "Shots", "SoT", "Pas3rd","TklWon", "PaswHead"]
 }
 
-
-
 def make_polygon(num_sides, size):
     straight_line_up = (0, size)
     list_of_points = [straight_line_up]
@@ -107,7 +105,7 @@ class Radar(QGraphicsItem):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        uic.loadUi('visMainWindow.ui', self)
+        uic.loadUi('Football-Stats-Visualiser/visMainWindow.ui', self)
         self.currentDataType = "raw"
         self.statFilter.addItems(get_data.GetHeaderList()[1:])  # Exclude the first column (ID)
         self.operationSelection.addItems([">", "<", "=", ">=", "<="])
@@ -155,6 +153,11 @@ class MainWindow(QMainWindow):
                 )
 
         self.label_list = []
+
+        # Miscellaneous UI setup
+        self.currentLoadedDataLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dataRadarOptions = ["Preset"] + ["Add new radar"] 
+        self.dataRadarTypeOptions.addItems(dataRadarOptions)
     
     def onPlayerTableClicked(self, index):
         source_index = self.proxy_model.mapToSource(index)
@@ -205,18 +208,22 @@ class MainWindow(QMainWindow):
     def loadRawData(self):
         self.model.update_data(get_data.GetRawData())
         self.currentDataType = "raw"
+        self.currentLoadedDataLabel.setText("Currently loaded data: Raw Data")
     
     def loadNormalisedData(self):
         self.model.update_data(get_data.GetNormalisedData())
         self.currentDataType = "normalised"
+        self.currentLoadedDataLabel.setText("Currently loaded data: Normalised Data")
     
     def loadNormalisedPerLeagueData(self):
         self.model.update_data(get_data.GetNormalisedPerLeagueData())
         self.currentDataType = "normalised_per_league"
+        self.currentLoadedDataLabel.setText("Currently loaded data: Normalised Per League Data")
     
     def loadNormalisedPerLeaguePerPos(self):
         self.model.update_data(get_data.GetNormalisedPerLeaguePerPosData())
         self.currentDataType = "normalised_per_league_per_pos"
+        self.currentLoadedDataLabel.setText("Currently loaded data: Normalised Per League and Position Data")
     
 
 class TableModel(QAbstractTableModel):

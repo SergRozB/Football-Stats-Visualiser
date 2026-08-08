@@ -1,8 +1,8 @@
 import pandas as pd
-raw_data = pd.read_csv("Data/2021-2022 Football Player Stats.csv", encoding='latin-1', sep=";")
-normalised_data = pd.read_csv("Data/2021-2022 Football Player Stats Normalised.csv", encoding='latin-1')
-normalised_per_league_data = pd.read_csv("Data/2021-2022 Football Player Stats Normalised Per League.csv", encoding='latin-1')
-normalised_per_league_per_pos_data = pd.read_csv("Data/2021-2022 Football Player Stats Normalised Per League and Position.csv", encoding='latin-1')
+raw_data = pd.read_csv("Football-Stats-Visualiser/Data/2021-2022 Football Player Stats.csv", encoding='latin-1', sep=";")
+normalised_data = pd.read_csv("Football-Stats-Visualiser/Data/2021-2022 Football Player Stats Normalised.csv", encoding='latin-1')
+normalised_per_league_data = pd.read_csv("Football-Stats-Visualiser/Data/2021-2022 Football Player Stats Normalised Per League.csv", encoding='latin-1')
+normalised_per_league_per_pos_data = pd.read_csv("Football-Stats-Visualiser/Data/2021-2022 Football Player Stats Normalised Per League and Position.csv", encoding='latin-1')
 
 def GetRawData():
     return raw_data.values.tolist()
