@@ -1,19 +1,22 @@
 import sys
+from warnings import filters
 from wsgiref import headers
-from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QGraphicsItem, QLabel
+from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QGraphicsItem, QLabel, QComboBox, QLineEdit, QPushButton
 from PyQt6.QtCore import Qt, QSortFilterProxyModel, QAbstractTableModel, QRectF, QPoint, QPointF
 from PyQt6.QtGui import QBrush, QColor, QPen, QPolygon
 from PyQt6 import uic
 import math
 import get_data
 from pyqttooltip import Tooltip, TooltipPlacement
+from statistics_dict import STATS
 
 # What data to use for radar chart for each position
 radar_data = {
     "FW": ["Goals", "Shots", "SoT", "Pas3rd","TklWon", "PaswHead", "Touches", "TouAtt3rd", "DriSucc"],
     "MF": ["Goals", "Shots", "SoT", "Pas3rd","TklWon", "PaswHead"],
     "DF": ["TklDri","PasHigh", "PasPress", "PasTotCmp%", "PasTotCmp", "PasProg","TklWon", "PaswHead", "PresSucc", "CarTotDist", "Int", "BlkSh"],
-    "GK": ["Goals", "Shots", "SoT", "Pas3rd","TklWon", "PaswHead"]
+    "GK": ["Goals", "Shots", "SoT", "Pas3rd","TklWon", "PaswHead"],
+    "Default": ["Goals", "Shots", "SoT", "Pas3rd","TklWon", "PaswHead"]
 }
 
 def make_polygon(num_sides, size):
@@ -31,12 +34,20 @@ def make_polygon(num_sides, size):
     return list_of_points
 
 class Radar(QGraphicsItem):
-    def __init__(self, dict_of_stats=None, view=None, size=200):
+    def __init__(self, dict_of_stats=None, view=None, size=200, currentDataType="raw", filters=[]):
         super().__init__()
         self.dict_of_stats = dict_of_stats
         self.view = view
         self.size = size
         self.label_list = []
+        self.currentDataType = currentDataType
+        self.filters = filters  
+
+    def setCurrentDataType(self, data_type):
+        self.currentDataType = data_type
+
+    def setFilters(self, filters):
+        self.filters = filters
 
     def boundingRect(self):
         return QRectF(0, 0, 100, 100)  # required
@@ -85,8 +96,24 @@ class Radar(QGraphicsItem):
                 # Get stat value and calculate where to draw the stat point
                 data_value = self.dict_of_stats[stat_name]
                 # multiply positions by normalised stat value to get stat point position
-                stat_x = position[0] * data_value
-                stat_y = position[1] * data_value
+                if self.currentDataType == "raw":
+                    if len(self.filters) > 0:
+                        # Apply filters to the data_value if needed
+                        percentile = get_data.GetPercentile(stat_name, data_value, self.currentDataType, self.filters)
+                    else:
+                        percentile = get_data.GetPercentile(stat_name, data_value, self.currentDataType)
+
+                    stat_x = position[0] * percentile
+                    stat_y = position[1] * percentile
+
+                else:
+                    percentile = data_value
+                    if len(self.filters) > 0:
+                        # Apply filters to the data_value if needed
+                        percentile = get_data.GetPercentile(stat_name, data_value, self.currentDataType, self.filters)
+
+                    stat_x = position[0] * percentile
+                    stat_y = position[1] * percentile
                 stats_points.append(QPoint(int(stat_x), int(stat_y)))
                 """
                 # Add label 
@@ -106,25 +133,42 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         uic.loadUi('Football-Stats-Visualiser/visMainWindow.ui', self)
+
+        # Filter stuff
+        self.filterTabIndex = 1
+        self.filterNum = 0
+        self.filterList = []
+        self.addFilterButton.clicked.connect(self.addFilter)
+        self.clearFiltersButton.clicked.connect(self.clearFilters)
+        self.toggleCurrentRadarFiltersButton.clicked.connect(self.toggleRadarFilters)
+        self.toggleDataLabelFiltersButton.clicked.connect(self.toggleDataLabelFilter)
+
+        self.showIfFiltersAppliedToDataLabel.setText("Filters Applied to Data Label: False")
+        self.toggleDataLabelFiltersButton.setEnabled(False)  # Disable the button when filters are not applied
+        self.toggleDataLabelFiltersButton.setStyleSheet("background-color : dark grey")  # Change the button color to dark grey when disabled
+
+        self.applyFiltersToRadar = False
+        self.applyFiltersToDataLabel = False
+
+
         self.currentDataType = "raw"
-        self.statFilter.addItems(get_data.GetHeaderList()[1:])  # Exclude the first column (ID)
-        self.operationSelection.addItems([">", "<", "=", ">=", "<="])
-        self.filterValueInput.setPlaceholderText("Enter value for filter...")
+        self.currentlySelectedPlayerID = None
         self.scene = QGraphicsScene()
-        shape = Radar()
-        self.scene.addItem(shape)
+        self.shape = Radar()
+        self.scene.addItem(self.shape)
         w = self.statsRadar.width()
         h = self.statsRadar.height()
         self.scene.setSceneRect(-w/2, -h/2, w, h)
         self.statsRadar.centerOn(0, 0)
         self.statsRadar.setScene(self.scene)
 
-        # Set up buttons
+        # Set up other buttons
         self.loadRawDataButton.clicked.connect(self.loadRawData)
         self.loadNormalisedDataButton.clicked.connect(self.loadNormalisedData)
         self.loadNormalisedDataButtonPerLeague.clicked.connect(self.loadNormalisedPerLeagueData)
         self.loadNormalisedDataButtonPerLeaguePerPos.clicked.connect(self.loadNormalisedPerLeaguePerPos)
         self.playerTable.clicked.connect(self.onPlayerTableClicked)
+        
 
         # Set up the table model and proxy model for sorting and filtering
         data = get_data.GetRawData()
@@ -147,8 +191,8 @@ class MainWindow(QMainWindow):
         )
 
         self.applyFiltersButton.clicked.connect(
-            lambda: self.proxy_model.applyFilter(
-                self.statFilter.currentIndex(), self.operationSelection.currentText(), self.filterValueInput.text()
+            lambda: self.proxy_model.applyFilters(
+                self.filterList
                 )
                 )
 
@@ -158,44 +202,129 @@ class MainWindow(QMainWindow):
         self.currentLoadedDataLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
         dataRadarOptions = ["Preset"] + ["Add new radar"] 
         self.dataRadarTypeOptions.addItems(dataRadarOptions)
-    
-    def onPlayerTableClicked(self, index):
+
+    def toggleRadarFilters(self):
+        self.applyFiltersToRadar = not self.applyFiltersToRadar
+        if self.applyFiltersToRadar:
+            self.showIfFiltersAppliedToRadar.setText("Filters Applied: True")
+            self.toggleDataLabelFiltersButton.setEnabled(True)  # Enable the button when filters are applied
+            self.toggleDataLabelFiltersButton.setStyleSheet("background-color : white")  # Change the button color to light grey when enabled
+
+        else:
+            self.showIfFiltersAppliedToRadar.setText("Filters Applied: False")
+            self.toggleDataLabelFiltersButton.setEnabled(False)  # Disable the button when filters are not applied
+            self.toggleDataLabelFiltersButton.setStyleSheet("background-color : dark grey")  # Change the button color to dark grey when disabled
+            self.showIfFiltersAppliedToDataLabel.setText("Filters Applied to Data Label: False")
+            self.applyFiltersToDataLabel = False
+
+        self.reloadRadarTableOnDataChange(self.currentDataType, apply_filters_to_radar=self.applyFiltersToRadar)
+
+    def toggleDataLabelFilter(self):
+        self.applyFiltersToDataLabel = not self.applyFiltersToDataLabel
+        if self.applyFiltersToDataLabel:
+            self.showIfFiltersAppliedToDataLabel.setText("Filters Applied to Data Label: True")
+        else:
+            self.showIfFiltersAppliedToDataLabel.setText("Filters Applied to Data Label: False")
+        self.reloadRadarTableOnDataChange(self.currentDataType, apply_filters_to_radar=self.applyFiltersToRadar)
+
+    def addFilter(self):
+        new_stat_filter = QComboBox()
+        new_operation_selection = QComboBox()
+        new_filter_value_input = QLineEdit()
+        remove_filter_button = QPushButton("Remove")
+        self.filterList.append((new_stat_filter, new_operation_selection, new_filter_value_input))
+
+        all_headers_raw = get_data.GetHeaderList()[1:]
+        all_headers_readable = [STATS.get(header, header) for header in all_headers_raw]
+        new_stat_filter.addItems(all_headers_readable)  # Exclude the first column (ID)
+        new_operation_selection.addItems([">", "<", "=", ">=", "<="])
+        new_filter_value_input.setPlaceholderText("Enter value for filter...")
+
+        self.filterLayout.addWidget(new_stat_filter, self.filterNum, 0)
+        self.filterLayout.addWidget(new_operation_selection, self.filterNum, 1)
+        self.filterLayout.addWidget(new_filter_value_input, self.filterNum, 2)
+        self.filterLayout.addWidget(remove_filter_button, self.filterNum, 3)
+        self.filterNum += 1
+
+        # Connect the remove button to a function that removes the filter
+        remove_filter_button.clicked.connect(lambda: self.removeFilter(new_stat_filter, new_operation_selection, new_filter_value_input, remove_filter_button))
+
+    def removeFilter(self, stat_filter, operation_selection, filter_value_input, remove_button):
+        # Remove the filter from the layout
+        self.filterLayout.removeWidget(stat_filter)
+        self.filterLayout.removeWidget(operation_selection)
+        self.filterLayout.removeWidget(filter_value_input)
+        self.filterLayout.removeWidget(remove_button)
+
+        # Delete the widgets
+        stat_filter.deleteLater()
+        operation_selection.deleteLater()
+        filter_value_input.deleteLater()
+        remove_button.deleteLater()
+
+        # Remove the filter from the list
+        filter_to_remove = (stat_filter, operation_selection, filter_value_input)
+        self.filterList.remove(filter_to_remove)
+        self.filterNum -= 1
+
+    def clearFilters(self):
+        while self.filterLayout.count():
+            item = self.filterLayout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        self.filterList.clear()
+        self.filterNum = 0
+
+    def onPlayerTableClicked(self, index, apply_filters_to_radar=False):
         source_index = self.proxy_model.mapToSource(index)
         row = source_index.row()
         rowData = get_data.GetRowData(row, self.currentDataType)
+        self.currentlySelectedPlayerID = rowData[0]  # Store the selected player's ID
         headers = get_data.GetHeaderList()
+        
         player_position_index = headers.index("Pos")
-        data_to_get = radar_data[rowData[player_position_index]]  # Get the list of stats to get for the player's position
+        data_to_get = radar_data.get(rowData[player_position_index], radar_data["Default"])  # Get the list of stats to get for the player's position
         data_name_and_value = {}
         for data_name in data_to_get:
             stat_index = headers.index(data_name)
             stat_value = rowData[stat_index]
             data_name_and_value[data_name] = stat_value
-        
+
         self.scene.clear()          # remove all items
         for label in self.label_list:
                 label.setHidden(True)
                 label.deleteLater()
         self.label_list.clear();
         polygon_size = 200
-        shape = Radar(data_name_and_value, self.statsRadar, polygon_size)
-        self.scene.addItem(shape)
+        if apply_filters_to_radar:
+            filters = self.proxy_model.proxyModelFiltersList
+        else:
+            filters = []
+        self.shape = Radar(data_name_and_value, self.statsRadar, polygon_size, self.currentDataType, filters)
+        self.scene.addItem(self.shape)
         self.statsRadar.setScene(self.scene)
         dict_of_stats = data_name_and_value
         num_sides = len(dict_of_stats) if dict_of_stats else 6
         list_of_points = make_polygon(num_sides, polygon_size)
+
+        # Calculate where to add labels for each stat point
         for i in range(len(list_of_points)):
                 position = list_of_points[i]
-                print(f"Position {i}: {position}")
                 # Get stat value and calculate where to draw the stat point
                 list_of_stat_names = list(dict_of_stats.keys())
                 stat_name = list_of_stat_names[i]
                 data_value = dict_of_stats[stat_name]
                 # multiply positions by normalised stat value to get stat point position
-                stat_x = position[0] * data_value
-                stat_y = position[1] * data_value
+                percentile = get_data.GetPercentile(stat_name, data_value, data_type=self.currentDataType, filters=filters)
+                stat_x = position[0] * percentile
+                stat_y = position[1] * percentile
 
                 # Add label 
+                if self.applyFiltersToDataLabel:
+                    # Apply filters to the data_value if needed
+                    data_value = percentile  # Use the percentile value if filters are applied
                 rounded_data_value = round(data_value, 2)
                 label = QLabel(str(rounded_data_value), parent=self.statsRadar.viewport());
                 label_pos = self.statsRadar.mapFromScene(QPointF(int(stat_x), int(stat_y)))
@@ -204,25 +333,53 @@ class MainWindow(QMainWindow):
                 label.show()
         # ... re-add your items ...
         self.statsRadar.viewport().update()  # force repaint
-        
+
+    # This function reloads the radar table when the data type of the table changes, ensuring that the currently selected player's stats are displayed correctly based on the new data type and any applied filters.
+    def reloadRadarTableOnDataChange(self, stat_type_name, apply_filters_to_radar=False):
+        self.shape.setCurrentDataType(stat_type_name)
+        print(f"Reloading radar table for player ID: {self.currentlySelectedPlayerID} with data type: {stat_type_name}")
+        table_row_index = get_data.GetRowIndexByPlayerID(
+            self.currentlySelectedPlayerID, self.currentDataType) if self.currentlySelectedPlayerID else -2
+        if table_row_index == -1:
+            print(f"Player ID '{self.currentlySelectedPlayerID}' not found in the {self.currentDataType} dataset.")
+        elif table_row_index == -2:
+            print("No player is currently selected.")
+        else:
+            source_model = self.proxy_model.sourceModel()
+            source_idx = source_model.index(table_row_index, 0)
+            index = self.proxy_model.mapFromSource(source_idx)  # Get the proxy index of the currently selected player
+            self.onPlayerTableClicked(index, apply_filters_to_radar)  # Pass the index and filter application flag to the method
+
     def loadRawData(self):
         self.model.update_data(get_data.GetRawData())
-        self.currentDataType = "raw"
+        stat_type_name = "raw"
+        self.currentDataType = stat_type_name
+        if self.currentlySelectedPlayerID:
+            self.reloadRadarTableOnDataChange(stat_type_name)
         self.currentLoadedDataLabel.setText("Currently loaded data: Raw Data")
     
     def loadNormalisedData(self):
         self.model.update_data(get_data.GetNormalisedData())
-        self.currentDataType = "normalised"
-        self.currentLoadedDataLabel.setText("Currently loaded data: Normalised Data")
+        stat_type_name = "normalised"
+        self.currentDataType = stat_type_name
+        if self.currentlySelectedPlayerID:
+            self.reloadRadarTableOnDataChange(stat_type_name)
+        self.currentLoadedDataLabel.setText("Currently loaded data: Raw Data")
     
     def loadNormalisedPerLeagueData(self):
         self.model.update_data(get_data.GetNormalisedPerLeagueData())
-        self.currentDataType = "normalised_per_league"
+        stat_type_name = "normalised_per_league"
+        self.currentDataType = stat_type_name
+        if self.currentlySelectedPlayerID:
+            self.reloadRadarTableOnDataChange(stat_type_name)
         self.currentLoadedDataLabel.setText("Currently loaded data: Normalised Per League Data")
     
     def loadNormalisedPerLeaguePerPos(self):
         self.model.update_data(get_data.GetNormalisedPerLeaguePerPosData())
-        self.currentDataType = "normalised_per_league_per_pos"
+        stat_type_name = "normalised_per_league_per_pos"
+        self.currentDataType = stat_type_name
+        if self.currentlySelectedPlayerID:
+            self.reloadRadarTableOnDataChange(stat_type_name)
         self.currentLoadedDataLabel.setText("Currently loaded data: Normalised Per League and Position Data")
     
 
@@ -264,24 +421,31 @@ class TableModel(QAbstractTableModel):
 class CustomProxyModel(QSortFilterProxyModel):
     def __init__(self):
         super().__init__()
-        self._stat_index_filter = None
-        self._operation = None
-        self._value = None
+        self.proxyModelFiltersList = []  # List to hold the filters
     
-    def applyFilter(self, statIndex, operation, value):
-        operation_functions = {">": lambda x, y: x > y,
+    def applyFilters(self, filterList):
+        operation_functions = {
+            ">": lambda x, y: x > y,
             "<": lambda x, y: x < y,
             "=": lambda x, y: x == y,
             ">=": lambda x, y: x >= y,
             "<=": lambda x, y: x <= y
         }
 
-        self._stat_index_filter = statIndex+1  # +1 to account for ID column
-        self._operation = operation_functions.get(operation)
-        if value.isdigit():
-            self._value = float(value)
-        else:
-            self._value = value
+        self.proxyModelFiltersList.clear()  # Clear existing filters
+        print(f"Applying filters: {filterList}")
+        for statFilterButton, operationSelectionButton, filterValueInputButton in filterList:
+            statFilter = statFilterButton.currentIndex()
+            operationText = operationSelectionButton.currentText()
+            filterValueInput = filterValueInputButton.text()
+
+            stat_index_filter = statFilter + 1  # +1 to account for ID column
+            operation = operation_functions.get(operationText)
+            if filterValueInput.isdigit():
+                value = float(filterValueInput)
+            else:
+                value = filterValueInput
+            self.proxyModelFiltersList.append((stat_index_filter, (operation, operationText), value))
         self.invalidateFilter()
 
     def filterAcceptsRow(self, source_row, source_parent):
@@ -296,17 +460,18 @@ class CustomProxyModel(QSortFilterProxyModel):
                 return False
         
         # Stat filter (column specified by _stat_index_filter)
-        if self._stat_index_filter != None and self._operation != None and self._value != None:
-            stat_index = model.index(source_row, self._stat_index_filter, source_parent)
-            stat = model.data(stat_index, Qt.ItemDataRole.DisplayRole)
-            try:
-                if self._operation:
-                    if isinstance(self._value, str):
-                        stat = float(stat)
-                    if not self._operation(stat, self._value):
-                        return False
-            except (ValueError, TypeError):
-                pass
+        for stat_index_filter, (operation, operation_text), value in self.proxyModelFiltersList:
+            if stat_index_filter != None and operation != None and value != None:
+                stat_index = model.index(source_row, stat_index_filter, source_parent)
+                stat = model.data(stat_index, Qt.ItemDataRole.DisplayRole)
+                try:
+                    if operation:
+                        if isinstance(value, str):
+                            stat = float(stat)
+                        if not operation(stat, value):
+                            return False
+                except (ValueError, TypeError):
+                    pass
 
 
         return True
